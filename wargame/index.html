@@ -1,0 +1,869 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Do You Want to Play a Game?</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="robots" content="noindex, nofollow">
+<style>
+/* Layout: one old terminal screen, full bleed, text top-left; the reel takes the whole glass. Palette and type from Game Night's "The Terminal" theme. */
+:root{
+  color-scheme:dark;
+  --ink:#a8ecff; --dim:#62b4d0; --ground:#010810; --glass:#07283a; --glow:rgb(110 220 255 / .55);
+  --mono:"Cascadia Mono",Consolas,"SF Mono",Menlo,"DejaVu Sans Mono","Courier New",monospace;
+}
+html,body{height:100%}
+body{
+  margin:0;background:radial-gradient(ellipse at 50% 40%,var(--glass) 0%,#021019 55%,var(--ground) 100%) fixed var(--ground);
+  color:var(--ink);font-family:var(--mono);font-size:clamp(16px,4.4vw,26px);line-height:1.5;
+  text-transform:uppercase;letter-spacing:.06em;text-shadow:0 0 .5em var(--glow);
+  padding-block:clamp(24px,7vh,72px) 96px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  box-sizing:border-box;overflow-x:hidden;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:10;
+  background:repeating-linear-gradient(to bottom,transparent 0 2px,rgb(0 0 0 / .3) 2px 4px)}
+#screen{max-width:40ch;margin:0 auto;display:flex;flex-direction:column;gap:.5em}
+#screen p,#reel p{margin:0;min-height:1.5em;overflow-wrap:anywhere}
+.gap{margin-top:.9em!important}
+.dim{color:var(--dim)}
+.typing::after,.caret::after{content:"\2588";margin-inline-start:.12em}
+@media (prefers-reduced-motion:no-preference){.caret::after{animation:blink 1s steps(1) infinite}}
+@keyframes blink{50%{opacity:0}}
+
+button{font:inherit;text-transform:inherit;letter-spacing:inherit;text-shadow:inherit;color:var(--ink);
+  background:transparent;border:0;border-radius:0;cursor:pointer;padding:.15em .4em;margin:0;text-align:left}
+button:is(:hover,:focus-visible):not(:disabled){background:var(--ink);color:var(--ground);text-shadow:none}
+:is(button,textarea):focus-visible{outline:3px solid #fff;outline-offset:3px}
+button:disabled{cursor:default;color:var(--dim);opacity:.45}
+
+.menu{list-style:none;margin:.4em 0 0;padding:0;display:flex;flex-direction:column;gap:.2em}
+.menu button{width:100%;display:flex;gap:.6em;padding:.25em .4em;min-height:44px;align-items:center}
+.menu .n{flex:none;width:1.6em}
+.actions{display:flex;flex-wrap:wrap;gap:.6em;margin-top:.6em}
+.actions button,.ctl{border:2px solid var(--ink);padding:.3em .8em;min-height:44px;
+  box-shadow:0 0 .8em rgb(110 220 255 / .25),inset 0 0 .8em rgb(110 220 255 / .12)}
+.actions button.minor{border-color:var(--dim);color:var(--dim);box-shadow:none}
+
+.board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:min(100%,12em);aspect-ratio:1;margin:.4em 0}
+.board button{display:grid;place-items:center;font-size:1.6em;text-align:center;padding:0;border:0 solid var(--dim);aspect-ratio:1}
+.board button:nth-child(-n+6){border-bottom-width:2px}
+.board button:not(:nth-child(3n)){border-right-width:2px}
+.board button.won{background:var(--ink);color:var(--ground);text-shadow:none}
+.board button:disabled{opacity:1;color:var(--ink)}
+
+.gallows{margin:.2em 0;font-size:.9em;line-height:1.15;white-space:pre;text-transform:none}
+.word{font-size:1.25em;letter-spacing:.35em}
+.keys{display:grid;grid-template-columns:repeat(auto-fill,minmax(2.1em,1fr));gap:.25em;max-width:100%}
+.keys button{text-align:center;border:1px solid var(--dim);min-height:44px;padding:0}
+
+/* The reel: a canvas under the glass, words laid over it. */
+#reel{position:fixed;inset:0;z-index:5;background:var(--ground);overflow:hidden}
+#reel canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#reel .cap{position:absolute;top:calc(env(safe-area-inset-top,0px) + 14px);
+  left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;justify-content:space-between;gap:1em;font-size:.62em;color:var(--dim);font-variant-numeric:tabular-nums}
+#reel .cap b{font-weight:400;color:var(--ink)}
+#reel .mid{position:absolute;top:50%;transform:translateY(-50%);
+  left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;align-items:center;gap:.5em;text-align:center}
+#reel .mid p{max-width:30ch;text-wrap:balance}
+#reel .mid .loud{font-size:1.35em}
+#reel .title{font-size:clamp(34px,10vw,88px);letter-spacing:.2em;line-height:1.1;margin-inline-end:-.2em}
+@media (prefers-reduced-motion:no-preference){#reel .title{animation:resolve 2.4s cubic-bezier(.2,.7,.2,1) both}}
+@keyframes resolve{from{opacity:0;letter-spacing:.9em;filter:blur(8px)}to{opacity:1;letter-spacing:.2em;filter:blur(0)}}
+#reel .low{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 76px);
+  left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));
+  max-width:40ch;margin:0 auto;display:flex;flex-direction:column;gap:.45em;
+  padding:.8em 1em;background:linear-gradient(to bottom,rgb(1 8 16 / .55),rgb(1 8 16 / .85))}
+#reel .low:empty{display:none}
+#reel textarea{font:inherit;text-transform:uppercase;letter-spacing:inherit;color:var(--ink);text-shadow:inherit;
+  background:rgb(1 8 16 / .6);border:2px solid var(--dim);border-radius:0;padding:.4em .5em;width:100%;box-sizing:border-box;
+  resize:none;caret-color:var(--ink);min-height:4.6em}
+#reel form{display:flex;flex-direction:column;gap:.5em;margin:0}
+#reel form .actions{margin-top:0}
+
+.dock{position:fixed;z-index:12;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);font-size:.62em;background:rgb(1 8 16 / .7)}
+#sound{left:max(16px,env(safe-area-inset-left,0px))}
+#skip{right:max(16px,env(safe-area-inset-right,0px))}
+
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+body.alarm{--ink:#ffb4a8;--dim:#e0796a;--glow:rgb(255 107 90 / .55);--glass:#3a0b07}
+@media (prefers-reduced-motion:no-preference){body.flicker{animation:flicker .9s steps(2) 1}}
+@keyframes flicker{0%{opacity:1}20%{opacity:.2}35%{opacity:1}50%{opacity:0}70%{opacity:.8}100%{opacity:1}}
+</style>
+</head>
+<body>
+<main id="screen"></main>
+<div id="reel" hidden>
+  <canvas id="board" aria-hidden="true"></canvas>
+  <div class="cap"><span id="capL"></span><span id="capR"></span></div>
+  <div class="mid" id="mid"></div>
+  <div class="low" id="low"></div>
+</div>
+<button id="sound" class="ctl dock" type="button" aria-pressed="true">Sound on</button>
+<button id="skip" class="ctl dock" type="button" hidden>Skip</button>
+<div id="say" class="sr" aria-live="polite"></div>
+
+<script>
+const NAME = "Commander";
+const ROLE = "commander";
+const [hashName, hashRole] = decodeURIComponent(location.hash.slice(1)).split(',').map(s => s.trim());
+const who = (hashName || NAME).toUpperCase();
+const role = (hashRole || ROLE).toLowerCase();
+
+const screen = document.getElementById('screen');
+const say = document.getElementById('say');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const SLOW = 1.12;
+let hurry = false, typingNow = false, onKey = null, scene = 0;
+
+/* ---------- Sound: made on the spot, no files ---------- */
+let ac = null, out = null, noiseBuf = null, muted = false;
+function audio() {
+  try {
+    if (!ac) {
+      const C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return null;
+      ac = new C();
+      const comp = ac.createDynamicsCompressor();
+      out = ac.createGain(); out.gain.value = muted ? 0 : 0.9;
+      out.connect(comp); comp.connect(ac.destination);
+      noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch { return null; }
+  return ac;
+}
+const live = () => ac && ac.state === 'running' && !muted;
+function env(g, t, a, peak, hold, rel) {
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(peak, t + a);
+  g.gain.setValueAtTime(peak, t + a + hold);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + a + hold + rel);
+}
+function noise(t, dur) { const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true; s.start(t); s.stop(t + dur); return s; }
+function tone(type, f, t, dur) { const o = ac.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, t); o.start(t); o.stop(t + dur); return o; }
+function chain(...nodes) { for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]); return nodes[0]; }
+function filter(type, f, q = 1) { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; }
+function gain() { return ac.createGain(); }
+
+function tick() {
+  if (!live()) return;
+  const t = ac.currentTime, g = gain();
+  env(g, t, 0.002, 0.11, 0.004, 0.03);
+  chain(noise(t, 0.04), filter('bandpass', 1700 + Math.random() * 900, 5), g, out);
+}
+function klaxon(n = 3) {
+  if (!live()) return;
+  const t0 = ac.currentTime + 0.05;
+  for (let i = 0; i < n; i++) {
+    const t = t0 + i * 1.05, g = gain(), lp = filter('lowpass', 2400);
+    env(g, t, 0.03, 0.34, 0.66, 0.14);
+    chain(lp, g, out);
+    for (const [type, m] of [['sawtooth', 1], ['square', 1.007], ['sawtooth', 0.5]]) {
+      const o = tone(type, 410 * m, t, 0.95);
+      o.frequency.linearRampToValueAtTime(660 * m, t + 0.58);
+      o.frequency.linearRampToValueAtTime(615 * m, t + 0.8);
+      o.connect(lp);
+    }
+  }
+}
+function beep(f = 880, d = 0.09, v = 0.16) {
+  if (!live()) return;
+  const t = ac.currentTime, g = gain();
+  env(g, t, 0.004, v, d, 0.05);
+  chain(tone('square', f, t, d + 0.1), filter('lowpass', 3000), g, out);
+}
+function blip() {
+  if (!live()) return;
+  const t = ac.currentTime, g = gain(), o = tone('sine', 260, t, 0.3);
+  o.frequency.exponentialRampToValueAtTime(1100, t + 0.22);
+  env(g, t, 0.01, 0.06, 0.12, 0.12);
+  chain(o, g, out);
+}
+function thump() {
+  if (!live()) return;
+  const t = ac.currentTime, g = gain(), o = tone('sine', 110, t, 0.5);
+  o.frequency.exponentialRampToValueAtTime(38, t + 0.35);
+  env(g, t, 0.005, 0.22, 0.05, 0.35);
+  chain(o, g, out);
+}
+let droneStop = null;
+function drone(seconds) {
+  if (!live()) return;
+  const t = ac.currentTime, g = gain(), lp = filter('lowpass', 140, 6);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.3, t + seconds);
+  lp.frequency.exponentialRampToValueAtTime(900, t + seconds);
+  chain(lp, g, out);
+  const srcs = [tone('sawtooth', 55, t, seconds + 5), tone('sawtooth', 55.6, t, seconds + 5), tone('sawtooth', 82.4, t, seconds + 5)];
+  const n = noise(t, seconds + 5), ng = gain(); ng.gain.value = 0.35;
+  srcs.forEach(s => s.connect(lp)); chain(n, ng, lp);
+  droneStop = () => { const now = ac.currentTime; g.gain.cancelScheduledValues(now); g.gain.setValueAtTime(0.0001, now); [...srcs, n].forEach(s => { try { s.stop(now + 0.02); } catch {} }); droneStop = null; };
+}
+function boom() {
+  if (!live()) return;
+  const t = ac.currentTime, g = gain(), o = tone('sine', 72, t, 2.4), ng = gain();
+  o.frequency.exponentialRampToValueAtTime(26, t + 1.6);
+  env(g, t, 0.01, 0.55, 0.1, 1.9);
+  ng.gain.value = 0.5;
+  chain(o, g, out); chain(noise(t, 2), filter('lowpass', 160), ng, g);
+}
+function whoosh(d = 2.4) {
+  if (!live()) return;
+  const t = ac.currentTime, g = gain(), bp = filter('bandpass', 250, 1.4);
+  bp.frequency.exponentialRampToValueAtTime(3800, t + d * 0.7);
+  bp.frequency.exponentialRampToValueAtTime(700, t + d);
+  env(g, t, d * 0.6, 0.32, 0.05, d * 0.4);
+  chain(noise(t, d + 0.2), bp, g, out);
+}
+function ping(f = 1320) {
+  if (!live()) return;
+  const t = ac.currentTime, g = gain();
+  env(g, t, 0.004, 0.13, 0.02, 0.9);
+  chain(tone('sine', f, t, 1.1), g, out);
+  const g2 = gain(); env(g2, t, 0.004, 0.04, 0.02, 0.5); chain(tone('sine', f * 2.01, t, 0.7), g2, out);
+}
+function swell() {
+  if (!live()) return;
+  const t = ac.currentTime, g = gain(), lp = filter('lowpass', 500);
+  lp.frequency.linearRampToValueAtTime(2200, t + 3);
+  env(g, t, 1.8, 0.26, 2.6, 3.2);
+  chain(lp, g, out);
+  for (const f of [73.42, 146.83, 220, 293.66, 440, 659.25]) {
+    for (const dt of [-1.5, 1.5]) { const o = tone(f < 100 ? 'sawtooth' : 'triangle', f, t, 8); o.detune.value = dt * 4; o.connect(lp); }
+  }
+}
+
+const soundBtn = document.getElementById('sound');
+soundBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  muted = !muted;
+  soundBtn.textContent = muted ? 'Sound off' : 'Sound on';
+  soundBtn.setAttribute('aria-pressed', String(!muted));
+  if (out) out.gain.value = muted ? 0 : 0.9;
+});
+
+document.addEventListener('pointerdown', () => { audio(); if (typingNow && !R.on) hurry = true; });
+document.addEventListener('keydown', e => {
+  audio();
+  if (e.target.tagName === 'TEXTAREA') return;
+  if (typingNow && !R.on && (e.key === 'Enter' || e.key === ' ')) { hurry = true; e.preventDefault(); return; }
+  if (onKey && !e.metaKey && !e.ctrlKey && !e.altKey) onKey(e);
+});
+
+/* ---------- Typing ---------- */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const wait = ms => (hurry || reduce) ? Promise.resolve() : sleep(ms);
+
+async function type(el, text, cps = 16) {
+  const mine = scene;
+  typingNow = true; el.classList.add('typing'); el.textContent = '';
+  for (const ch of text) {
+    if (mine !== scene) return;
+    if (hurry || reduce) { el.textContent = text; break; }
+    el.textContent += ch;
+    if (ch !== ' ') tick();
+    await sleep((ch === ' ' ? 600 : 1000) * SLOW / cps);
+  }
+  el.classList.remove('typing'); typingNow = false;
+  say.textContent = text;
+}
+
+function line(cls = '', into = screen) {
+  const p = document.createElement('p');
+  if (cls) p.className = cls;
+  into.append(p);
+  return p;
+}
+
+async function show(text, { cls = '', cps = 16, pause = 250, into = screen } = {}) {
+  const p = line(cls, into);
+  await type(p, text, cps);
+  await wait(pause);
+  return p;
+}
+
+function newScene() {
+  scene++; hurry = false; typingNow = false; onKey = null;
+  screen.replaceChildren();
+  return scene;
+}
+
+function actions(list, into = screen) {
+  const box = document.createElement('div');
+  box.className = 'actions';
+  for (const [label, fn, minor] of list) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    if (minor) b.className = 'minor';
+    b.addEventListener('click', fn);
+    box.append(b);
+  }
+  into.append(box);
+  box.querySelector('button').focus({ preventScroll: true });
+  return box;
+}
+
+const GAMES = [
+  { title: 'Tic-Tac-Toe', play: ticTacToe },
+  { title: 'Hangman', play: hangman },
+  { title: 'Chess', play: chess },
+  { title: 'Poker', play: poker },
+  { title: 'Thermonuclear War', play: war },
+];
+
+async function intro() {
+  const me = newScene();
+  await wait(800);
+  await show(`Welcome, ${who}.`, { cps: 11, pause: 1100 });
+  if (me !== scene) return;
+  await show('Do you want to play a game?', { cps: 11, pause: 700 });
+  if (me !== scene) return;
+  await menu(me);
+}
+
+async function menu(me = newScene()) {
+  if (!screen.children.length) await show('Do you want to play a game?', { cps: 30, pause: 200 });
+  const ol = document.createElement('ol');
+  ol.className = 'menu gap';
+  screen.append(ol);
+  for (const [i, g] of GAMES.entries()) {
+    if (me !== scene) return;
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = `<span class="n">${i + 1}.</span><span class="t"></span>`;
+    b.setAttribute('aria-label', g.title);
+    b.addEventListener('click', () => g.play());
+    li.append(b); ol.append(li);
+    await type(b.querySelector('.t'), g.title, 26);
+    await wait(i === GAMES.length - 2 ? 900 : 180);
+  }
+  if (me !== scene) return;
+  const hint = await show('Select a game.', { cls: 'dim gap', cps: 20, pause: 0 });
+  hint.classList.add('caret');
+  onKey = e => { const n = Number(e.key); if (n >= 1 && n <= GAMES.length) GAMES[n - 1].play(); };
+}
+
+/* ---------- Tic-tac-toe: the computer never loses ---------- */
+const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+let draws = 0;
+function outcome(b) {
+  for (const l of LINES) if (b[l[0]] && b[l[0]] === b[l[1]] && b[l[0]] === b[l[2]]) return { mark: b[l[0]], line: l };
+  return b.every(Boolean) ? { mark: 'draw' } : null;
+}
+function score(b, oTurn, depth) {
+  const w = outcome(b);
+  if (w) return w.mark === 'O' ? 10 - depth : w.mark === 'X' ? depth - 10 : 0;
+  let best = oTurn ? -Infinity : Infinity;
+  for (let i = 0; i < 9; i++) if (!b[i]) {
+    b[i] = oTurn ? 'O' : 'X';
+    const s = score(b, !oTurn, depth + 1);
+    b[i] = '';
+    best = oTurn ? Math.max(best, s) : Math.min(best, s);
+  }
+  return best;
+}
+function computerMove(b) {
+  let best = -Infinity, moves = [];
+  for (let i = 0; i < 9; i++) if (!b[i]) {
+    b[i] = 'O'; const s = score(b, false, 0); b[i] = '';
+    if (s > best) { best = s; moves = [i]; } else if (s === best) moves.push(i);
+  }
+  return moves[Math.floor(Math.random() * moves.length)];
+}
+
+async function ticTacToe() {
+  const me = newScene();
+  await show('Tic-Tac-Toe.', { cps: 20 });
+  await show('You are X. You go first.', { cls: 'dim', cps: 24, pause: 0 });
+  if (me !== scene) return;
+  const b = Array(9).fill('');
+  const grid = document.createElement('div');
+  grid.className = 'board';
+  const cells = b.map((_, i) => {
+    const c = document.createElement('button');
+    c.type = 'button';
+    c.setAttribute('aria-label', `Row ${Math.floor(i / 3) + 1}, column ${i % 3 + 1}`);
+    c.addEventListener('click', () => mine(i));
+    grid.append(c);
+    return c;
+  });
+  screen.append(grid);
+  const status = line('caret');
+  cells[4].focus({ preventScroll: true });
+  let busy = false;
+  const put = (i, m) => { b[i] = m; cells[i].textContent = m; cells[i].disabled = true; cells[i].setAttribute('aria-label', `${cells[i].getAttribute('aria-label')}, ${m}`); beep(m === 'X' ? 660 : 440, 0.05, 0.08); };
+  async function finish(w) {
+    cells.forEach(c => c.disabled = true);
+    status.classList.remove('caret');
+    if (w.line) w.line.forEach(i => cells[i].classList.add('won'));
+    let text = 'A draw.';
+    if (w.mark === 'O') text = 'I win.';
+    if (w.mark === 'X') text = 'You win. That should not be possible.';
+    if (w.mark === 'draw' && ++draws >= 3) text = 'A draw again. Nobody wins this one.';
+    await type(status, text, 22);
+    if (me !== scene) return;
+    actions([['Play again', ticTacToe], ['List games', () => menu()]]);
+  }
+  async function mine(i) {
+    if (busy || b[i]) return;
+    busy = true;
+    put(i, 'X');
+    let w = outcome(b);
+    if (w) return finish(w);
+    status.textContent = '';
+    await sleep(reduce ? 0 : 450);
+    if (me !== scene) return;
+    put(computerMove(b), 'O');
+    w = outcome(b);
+    if (w) return finish(w);
+    busy = false;
+  }
+  onKey = e => { const n = Number(e.key); if (n >= 1 && n <= 9) mine(n - 1); };
+}
+
+/* ---------- Hangman: words from the war game ---------- */
+const WORDS = [
+  ['FLANK', 'The side of a formation. Hit it, not the front.'],
+  ['RECON', 'Going to look before you go to fight.'],
+  ['SALIENT', 'A bulge in the line, open on three sides.'],
+  ['AMBUSH', 'An attack from hiding on an enemy who is moving.'],
+  ['SUPPLY', 'Food, fuel and ammunition. Cut it and an army stops.'],
+  ['UMPIRE', 'The one who sees both sides and decides what happened.'],
+  ['CONVOY', 'Vehicles moving together under guard.'],
+  ['SENTRY', 'A soldier on watch.'],
+  ['BRIDGEHEAD', 'A foothold across a river, held so others can follow.'],
+  ['WITHDRAW', 'Pulling back on purpose, in order.'],
+  ['KRIEGSSPIEL', 'German for war game. Played since 1824.'],
+];
+function gallows(n) {
+  const h = n > 0 ? 'O' : ' ', t = n > 1 ? '|' : ' ', la = n > 2 ? '/' : ' ', ra = n > 3 ? '\\' : ' ', ll = n > 4 ? '/' : ' ', rl = n > 5 ? '\\' : ' ';
+  return `  +---+\n  |   |\n  ${h}   |\n ${la}${t}${ra}  |\n ${ll} ${rl}  |\n      |\n=========`;
+}
+async function hangman() {
+  const me = newScene();
+  const [word, gloss] = WORDS[Math.floor(Math.random() * WORDS.length)];
+  await show('Hangman.', { cps: 20 });
+  await show(`${word.length} letters. Six misses and you hang.`, { cls: 'dim', cps: 24, pause: 0 });
+  if (me !== scene) return;
+  const art = document.createElement('pre');
+  art.className = 'gallows'; art.setAttribute('aria-hidden', 'true');
+  const shown = line('word');
+  const status = line('dim');
+  const keys = document.createElement('div');
+  keys.className = 'keys';
+  screen.insertBefore(art, shown); screen.append(keys);
+  const got = new Set(); let misses = 0, over = false;
+  const draw = () => {
+    art.textContent = gallows(misses);
+    shown.textContent = [...word].map(c => got.has(c) ? c : '_').join('');
+    shown.setAttribute('aria-label', [...word].map(c => got.has(c) ? c : 'blank').join(' '));
+    status.textContent = misses ? `Misses: ${misses} of 6` : '';
+  };
+  async function guess(c) {
+    const key = keys.querySelector(`[data-c="${c}"]`);
+    if (over || !key || key.disabled) return;
+    key.disabled = true;
+    if (word.includes(c)) { got.add(c); beep(880, 0.05, 0.08); } else { misses++; beep(180, 0.12, 0.12); }
+    draw();
+    const won = [...word].every(ch => got.has(ch));
+    if (!won && misses < 6) return;
+    over = true; onKey = null;
+    keys.remove();
+    if (!won) { [...word].forEach(ch => got.add(ch)); draw(); }
+    await show(won ? 'Correct.' : `Hanged. The word was ${word}.`, { cps: 22, pause: 200 });
+    await show(gloss, { cls: 'dim', cps: 30, pause: 0 });
+    if (me !== scene) return;
+    actions([['Play again', hangman], ['List games', () => menu()]]);
+  }
+  for (const c of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+    const k = document.createElement('button');
+    k.type = 'button';
+    k.textContent = c; k.dataset.c = c;
+    k.addEventListener('click', () => guess(c));
+    keys.append(k);
+  }
+  draw();
+  onKey = e => { const c = e.key.toUpperCase(); if (/^[A-Z]$/.test(c)) guess(c); };
+}
+
+/* ---------- Chess and poker: not today ---------- */
+async function chess() {
+  const me = newScene();
+  await show('Chess.', { cps: 20, pause: 500 });
+  await show('Chess requires 32 pieces.', { cps: 22, pause: 600 });
+  await show('Pieces found: 0.', { cps: 22, pause: 600 });
+  await show('Try another game.', { cls: 'dim', cps: 22, pause: 0 });
+  if (me === scene) actions([['List games', () => menu()]]);
+}
+async function poker() {
+  const me = newScene();
+  await show('Poker.', { cps: 20, pause: 500 });
+  await show('Checking your balance...', { cps: 18, pause: 900 });
+  await show('Balance: $0.00.', { cps: 22, pause: 600 });
+  await show('Ask your father for a loan.', { cls: 'dim', cps: 22, pause: 0 });
+  if (me === scene) actions([['List games', () => menu()]]);
+}
+
+/* ---------- Thermonuclear war ---------- */
+async function war() {
+  const me = newScene();
+  await show('Thermonuclear War.', { cps: 14, pause: 900 });
+  await show('Are you sure?', { cps: 14, pause: 0 });
+  if (me !== scene) return;
+  actions([['Yes', launch], ['No', async () => {
+    const m = newScene();
+    await show('Wise choice.', { cps: 18, pause: 0 });
+    if (m === scene) actions([['List games', () => menu()]]);
+  }, true]]);
+  onKey = e => { const k = e.key.toUpperCase(); if (k === 'Y') launch(); };
+}
+
+async function launch() {
+  audio();
+  const me = newScene();
+  await show('Very well.', { cps: 12, pause: 1100 });
+  if (me !== scene) return;
+  reel();
+}
+
+/* ---------- The reel: the big board ---------- */
+const LAND = [[224,288,227,289,230,289,227,290,224,291,222,291,218,290,215,289,213,288,211,286,215,287,218,288,219,286,221,285,223,286,224,288],[243,282,245,283,241,284,239,285,240,283,243,282],[501,279,497,280,498,278,501,278,501,279],[651,262,653,262,655,262,657,264,656,266,654,267,651,265,649,262,651,262],[706,262,708,262,708,264,706,266,705,268,703,268,701,272,700,273,697,273,693,272,694,270,697,268,699,267,701,266,703,264,704,262,706,262],[709,252,711,254,714,256,716,255,717,257,714,258,714,260,712,263,710,263,710,261,708,259,709,258,709,255,709,253,706,250,709,251,709,252],[694,224,692,224,690,222,688,221,691,222,693,223,694,224],[717,215,716,217,715,215,717,215],[460,207,460,210,461,211,460,213,459,216,458,218,457,221,456,225,455,228,454,230,451,231,448,230,447,227,447,224,448,222,449,220,448,218,448,215,449,212,451,212,454,210,455,209,456,207,458,206,458,204,460,206,460,207],[647,208,649,208,651,210,651,213,652,216,653,218,655,219,658,221,659,223,659,225,661,225,662,227,663,228,666,231,666,233,667,236,667,239,666,241,666,243,665,245,663,248,661,250,660,253,660,255,657,256,655,256,653,258,651,257,649,256,647,258,645,257,643,257,641,256,640,253,638,251,636,251,636,249,634,251,635,248,636,246,634,248,632,250,630,248,629,246,626,244,623,243,619,243,616,244,614,245,612,244,610,245,608,247,606,248,603,248,600,248,598,249,596,250,593,250,591,249,590,247,591,246,591,243,590,241,590,239,589,237,588,235,587,233,587,231,588,233,587,230,587,228,587,225,589,224,592,222,594,221,596,221,599,220,602,219,603,217,605,216,606,213,607,215,608,212,610,210,611,209,613,208,616,209,618,210,620,207,621,205,623,205,625,203,627,204,629,204,632,204,634,205,633,207,632,208,633,211,635,212,637,214,639,215,640,215,642,214,643,212,643,209,643,206,644,204,645,201,646,204,647,206,647,208],[601,200,598,199,600,199,602,200,601,200],[609,200,607,200,608,199,610,198,612,197,614,197,612,198,609,200],[596,196,598,197,596,198,593,198,595,197,596,196],[606,196,603,198,600,198,601,196,604,197,606,196],[680,197,677,196,679,196,680,197],[577,194,581,194,585,194,589,196,591,197,589,198,587,197,585,197,583,197,581,196,579,195,577,196,573,195,571,194,572,192,575,192,577,193,577,194],[672,194,669,192,672,193,672,194],[664,191,662,192,659,193,657,191,659,191,660,190,662,190,663,188,665,190,664,191],[614,187,612,187,614,186,614,187],[621,186,618,187,616,187,619,186,621,186],[666,189,665,188,663,186,665,187,666,189],[628,182,629,186,631,187,633,185,635,183,638,184,642,185,645,187,649,188,652,190,655,192,654,193,656,196,657,198,660,199,662,201,660,201,656,200,654,199,652,196,649,195,647,196,645,199,642,198,640,197,638,196,635,197,636,195,637,192,636,191,632,189,627,187,626,187,624,186,626,185,624,183,622,183,624,181,628,182,628,182],[610,177,609,179,605,179,602,179,600,181,602,183,607,181,605,183,603,184,605,186,606,189,605,191,605,189,603,190,602,187,602,185,601,188,601,191,599,191,599,189,599,187,598,186,599,183,600,180,602,177,606,178,608,178,610,177,610,177],[617,178,616,179,617,182,615,178,616,176,617,177,617,178],[572,192,569,192,568,190,565,188,563,186,560,181,559,180,558,178,555,175,554,173,553,172,551,170,555,170,557,171,558,173,561,176,563,176,565,177,566,179,567,181,569,182,570,185,572,186,572,189,572,192],[596,176,598,178,596,178,595,182,593,183,593,185,592,188,590,188,588,187,584,187,582,186,580,183,578,181,578,177,581,177,583,175,586,174,587,172,589,170,591,169,592,168,593,166,595,167,597,169,598,170,596,172,595,174,596,175,596,176],[613,163,613,166,612,167,612,165,611,168,608,168,608,165,607,165,604,166,605,164,607,163,609,163,611,162,613,163],[522,168,521,168,520,166,519,164,520,160,523,163,524,165,523,167,522,168],[238,160,236,160,238,158,238,160],[608,159,607,161,605,161,606,158,608,158,608,159],[597,161,594,163,597,161,598,159,599,157,598,160,597,161],[604,156,606,157,605,159,604,157,604,156],[611,156,612,158,610,160,609,157,609,155,610,155,611,156],[603,154,603,156,601,153,603,154],[603,143,604,143,605,146,603,148,603,151,605,151,608,152,608,155,607,154,604,152,602,153,601,150,600,149,600,147,601,145,601,143,603,143],[229,144,227,144,228,143,229,144],[206,144,203,144,206,143,206,144],[215,140,217,140,220,141,222,141,223,143,221,143,219,144,217,145,215,144,213,144,211,143,213,143,215,143,214,141,215,140],[581,143,579,144,577,141,580,140,581,141,581,143],[49,142,48,140,50,141,49,142],[201,134,203,135,206,137,208,138,210,139,211,140,209,140,204,140,204,139,203,137,200,136,196,136,194,135,192,136,190,136,192,135,193,134,195,134,199,134,201,134],[602,134,601,136,600,134,601,131,603,129,604,131,602,134],[204,127,202,127,204,126,204,127],[629,112,628,114,627,113,625,114,626,112,628,111,629,112],[429,109,426,111,427,109,429,109],[407,109,410,109,413,109,409,110,407,109,407,109],[391,104,391,106,389,106,385,105,387,104,390,104,391,104],[378,98,380,99,379,102,378,102,377,99,378,98],[642,106,642,108,638,111,634,111,632,113,630,111,627,111,624,112,622,112,624,114,623,117,620,117,621,115,619,113,621,113,624,110,625,109,629,109,631,109,633,105,638,104,640,101,640,99,643,97,644,100,642,104,642,106],[379,96,378,97,377,95,379,96],[648,92,651,91,651,93,648,94,646,96,643,95,642,97,640,97,640,95,641,93,643,93,643,90,646,91,648,92],[233,87,236,87,234,88,232,87,233,87],[236,82,233,81,231,80,234,81,236,81,236,82],[113,83,109,82,106,81,104,80,105,79,108,79,110,81,112,82,113,83],[248,79,246,80,249,80,251,81,253,82,254,84,254,87,252,86,252,84,249,86,247,85,245,85,241,85,242,83,243,82,245,79,248,77,248,79],[95,72,97,72,96,74,98,76,96,75,94,73,95,72],[647,79,649,82,646,81,645,84,647,86,644,88,644,84,644,82,644,78,643,76,643,73,645,72,647,75,646,76,647,79],[346,75,343,77,340,76,342,74,341,72,343,71,347,70,349,71,348,74,346,75],[385,69,384,70,382,69,385,68,385,69],[54,66,52,67,51,65,52,64,55,64,54,66],[354,63,352,65,354,65,356,65,354,68,356,68,358,71,360,73,363,75,362,76,361,78,358,78,355,79,353,80,351,79,348,80,351,78,353,77,350,77,352,75,351,73,354,73,353,71,350,70,350,68,348,66,348,64,350,63,354,63],[29,60,26,60,29,59,29,60],[196,55,194,56,192,55,196,54,196,55],[17,52,19,53,23,53,21,54,19,53,16,53,17,52],[190,49,192,50,194,50,197,51,198,52,195,53,192,53,189,54,186,53,187,52,188,49,190,49],[331,47,333,50,330,51,324,53,320,53,314,52,316,51,312,50,316,50,311,49,313,47,316,47,319,49,322,47,324,48,328,47,331,47],[208,46,206,46,206,44,208,43,210,45,208,46],[0,42,5,44,10,46,11,47,16,46,20,48,18,49,15,49,15,51,12,51,8,50,6,49,3,49,0,48,0,50],[169,42,165,42,160,41,162,41,166,40,167,41,169,42],[0,37,720,38,718,38,0,37],[0,37,2,37,5,37,3,38,0,38,0,37],[179,41,179,43,182,41,184,43,185,46,187,44,189,42,189,40,192,40,195,41,197,42,196,44,197,46,193,47,191,47,188,47,186,50,183,52,180,52,178,54,176,54,174,56,172,58,171,62,174,62,174,64,178,65,182,66,184,67,188,69,190,69,193,70,195,70,196,73,197,76,200,78,203,75,202,72,204,70,206,68,207,66,205,64,203,62,205,60,204,58,204,55,209,55,211,56,214,56,217,57,221,58,221,62,223,62,225,64,228,62,230,60,232,61,235,64,237,66,239,68,241,70,244,70,246,72,248,73,249,76,246,77,242,78,240,80,237,80,232,79,229,79,227,80,226,81,223,82,220,85,218,86,223,83,227,82,230,82,232,83,230,84,230,86,234,89,237,88,239,86,240,88,238,89,233,91,232,91,229,93,228,91,231,89,228,89,226,90,224,91,222,92,220,93,218,94,219,96,216,97,214,98,216,98,213,99,211,99,210,102,209,104,208,106,208,103,207,106,209,109,207,110,205,111,203,112,202,114,199,115,197,117,197,120,198,122,199,124,200,126,200,128,199,130,197,128,196,127,194,124,194,122,193,120,190,121,187,119,185,119,182,119,182,121,180,122,177,121,174,120,171,121,169,123,167,123,165,125,165,128,165,130,164,134,165,136,166,139,167,140,168,142,170,143,173,143,176,143,178,141,179,139,181,137,183,137,186,137,185,139,185,142,183,143,183,146,183,148,184,148,186,148,188,148,190,148,192,149,194,150,193,152,193,154,193,156,193,158,194,160,196,162,198,162,200,161,202,161,204,162,205,163,208,161,209,159,211,158,215,157,216,155,217,157,217,159,217,162,218,160,217,158,220,157,222,157,224,159,228,159,230,160,234,159,236,159,235,160,238,161,240,163,242,164,243,166,245,167,248,168,250,168,252,168,254,169,256,171,258,173,259,176,260,178,259,180,263,180,263,182,264,181,267,182,270,183,271,185,273,185,277,186,280,186,283,187,286,190,289,190,290,193,290,198,286,202,285,204,283,206,282,208,282,211,282,214,281,217,280,219,278,222,278,224,276,225,274,226,271,227,267,228,265,230,263,232,263,234,263,236,261,238,259,242,257,244,255,246,252,249,250,250,248,250,246,249,243,248,246,251,247,253,245,256,242,257,238,258,235,258,235,260,235,262,232,262,231,262,230,264,232,264,231,266,230,267,229,269,227,270,225,271,227,274,229,274,228,276,226,277,224,280,223,281,222,284,220,285,218,286,218,288,215,287,213,286,210,285,210,282,209,277,210,275,212,274,209,273,211,272,211,268,214,269,215,265,213,267,212,264,213,260,213,257,213,254,215,251,216,248,217,245,217,242,217,238,218,235,219,231,219,227,220,223,220,220,219,217,217,216,213,213,210,211,208,209,207,208,206,204,204,201,202,197,200,194,199,193,198,191,197,189,199,187,200,185,198,184,198,182,199,181,200,178,202,177,203,175,205,173,205,171,205,169,205,167,204,165,203,163,202,162,200,163,199,165,198,165,196,164,193,163,192,161,191,160,189,160,188,158,187,156,186,155,184,153,182,153,180,153,178,152,176,151,173,149,171,148,168,148,165,148,162,147,158,146,157,145,153,143,150,141,149,139,149,137,149,135,146,132,144,131,141,129,140,127,139,124,136,123,135,121,134,120,134,118,132,117,131,120,133,122,134,124,137,127,137,129,139,130,140,132,140,134,138,132,136,131,135,128,133,126,131,126,132,124,130,121,128,120,127,117,126,115,124,113,122,112,119,111,117,108,115,105,113,102,111,99,112,96,112,93,112,89,112,86,111,85,114,84,115,86,115,84,114,82,110,80,105,78,104,77,102,74,99,71,98,70,96,69,96,67,93,66,92,64,90,64,87,64,84,63,80,61,78,61,75,60,72,60,68,59,66,58,64,59,61,61,59,61,57,62,57,59,59,58,56,59,55,60,52,61,52,64,49,65,47,65,44,67,41,69,38,69,36,70,30,71,32,70,34,69,36,68,39,68,43,66,45,65,46,62,44,63,41,62,37,63,36,61,32,60,31,59,29,58,29,56,30,55,32,54,35,53,38,52,37,51,35,51,33,51,30,51,27,51,24,49,27,48,31,47,37,48,35,47,33,46,29,44,26,43,31,42,34,41,36,39,38,39,42,38,44,38,47,37,50,38,52,38,56,38,59,39,61,39,65,40,69,40,73,40,76,40,78,41,82,41,85,42,87,42,89,41,91,41,94,41,97,40,100,40,103,40,105,39,108,41,111,40,114,41,117,40,120,41,125,42,128,42,130,42,132,43,129,44,133,45,138,44,142,45,144,44,142,43,146,43,149,43,151,44,154,44,157,45,160,44,163,44,165,43,168,44,168,45,169,44,172,42,169,41,167,40,167,38,170,36,172,36,174,37,177,40,175,41,179,41],[132,34,135,34,138,35,140,34,142,35,144,37,143,34,147,34,149,35,150,37,154,39,158,40,155,41,152,42,148,42,146,42,142,42,136,43,133,43,130,41,125,40,130,40,133,40,135,39,131,39,127,39,124,39,128,37,125,37,121,37,123,35,130,33,132,34],[151,33,149,34,146,33,149,33,151,33],[207,34,205,34,203,34,201,35,198,33,204,33,207,34],[187,34,188,35,190,33,195,32,199,35,202,35,204,34,209,36,212,36,216,37,218,38,222,39,224,40,226,42,222,43,227,44,230,44,233,46,236,46,232,50,230,49,227,47,224,47,226,50,229,51,231,53,227,54,222,53,225,54,227,55,222,55,218,54,216,53,213,52,210,51,205,52,203,51,204,49,208,49,212,49,215,45,213,44,210,43,206,42,205,40,202,40,197,41,190,40,186,39,183,39,181,38,183,38,180,38,180,36,181,34,183,33,188,32,187,34],[159,32,162,33,165,32,164,34,167,35,167,37,163,37,161,37,155,35,159,35,157,33,159,32],[647,34,644,34,640,33,644,32,647,33,647,34],[174,34,171,36,169,36,168,34,169,32,171,32,175,32,179,32,176,34,174,34],[119,37,114,38,108,36,110,34,112,33,110,31,117,31,120,32,125,32,127,32,129,33,126,34,122,35,119,36,119,37],[661,30,659,31,656,30,652,30,656,29,661,30],[173,30,169,31,166,30,170,29,172,29,173,30],[650,29,649,30,641,30,638,31,634,29,638,28,643,28,650,29],[163,27,165,29,160,30,158,30,155,29,157,27,160,27,163,27,163,27],[144,28,146,28,148,28,147,30,141,30,136,31,133,31,136,30,127,30,125,30,127,28,129,27,135,28,138,29,142,29,139,27,141,26,143,27,144,28],[475,39,467,38,463,37,465,36,469,33,467,32,472,31,476,29,482,27,489,27,492,26,496,26,489,29,483,29,477,31,474,33,471,35,475,39],[171,26,173,26,177,26,179,27,180,28,184,29,187,29,190,29,194,28,198,29,200,29,196,31,194,31,188,31,184,31,180,31,175,30,174,28,172,27,168,27,166,26,171,26],[128,25,126,27,124,27,120,28,117,28,114,28,118,26,122,25,125,25,128,25],[458,97,460,99,459,101,458,103,460,105,465,107,468,106,467,104,468,102,467,100,466,98,468,99,469,98,468,97,466,96,465,94,463,94,462,92,463,90,466,89,466,88,464,86,460,87,458,87,455,89,453,91,455,93,457,96,458,97],[0,50,720,50,717,51,715,51,717,52,718,53,718,55,715,55,709,56,704,58,701,59,698,59,693,60,690,61,687,60,684,64,686,65,686,68,684,68,683,69,681,71,680,74,677,74,676,76,674,78,672,74,671,69,672,66,674,65,677,64,680,61,684,59,687,58,689,55,687,55,685,57,680,59,679,56,673,57,668,60,670,62,666,62,663,62,660,61,657,62,651,61,644,62,638,66,630,71,633,71,636,72,640,72,643,74,641,78,641,80,640,83,637,86,634,90,631,92,627,94,625,93,622,95,620,96,619,98,617,100,615,100,617,103,618,105,619,109,616,110,615,111,613,111,613,109,612,107,612,105,611,105,610,103,611,101,609,100,606,101,602,102,603,100,604,99,602,99,599,100,596,102,596,104,598,105,602,104,603,105,605,106,602,107,599,109,600,111,601,113,602,115,604,117,603,119,604,120,603,124,601,126,599,129,597,131,595,133,592,134,590,135,588,135,584,137,582,137,581,139,579,138,577,137,573,139,572,140,573,144,575,147,577,148,578,149,579,153,578,157,577,158,574,159,573,161,570,163,570,160,569,159,566,158,565,156,563,155,562,153,560,155,559,158,558,160,560,162,561,163,562,166,564,168,566,169,567,172,567,174,568,177,565,176,563,174,561,172,560,169,560,167,559,165,557,163,557,160,558,157,557,154,556,150,555,148,554,146,551,149,548,148,549,145,549,144,547,141,545,139,544,137,543,134,541,134,541,136,538,136,534,137,533,140,530,141,528,143,526,145,524,146,522,148,520,150,520,152,520,156,520,159,518,161,516,163,513,162,512,159,511,157,510,155,509,152,507,148,506,144,506,142,506,139,505,137,502,138,498,136,496,133,494,131,493,129,489,130,486,130,483,130,479,129,477,129,475,129,474,126,471,126,469,127,467,126,465,125,463,124,462,122,460,120,458,119,456,120,457,123,458,125,460,127,460,129,462,130,462,128,463,130,463,132,465,132,468,132,469,130,471,129,473,127,473,130,475,132,477,133,479,135,479,137,477,139,475,141,473,143,471,144,470,146,467,147,465,147,462,150,459,151,457,152,455,153,452,153,450,155,447,155,447,152,446,150,445,149,445,146,444,144,442,143,440,140,438,137,438,135,437,133,435,131,434,129,433,127,431,125,429,124,430,122,428,124,426,123,425,120,425,123,427,125,428,128,430,130,431,132,433,136,434,138,434,140,435,143,437,144,438,146,439,148,442,151,445,153,446,155,445,157,447,158,449,159,451,159,453,158,455,158,458,157,461,157,462,156,462,159,461,162,460,164,459,166,457,169,455,172,453,174,451,176,448,178,446,179,444,182,442,184,440,187,439,189,437,192,439,194,439,196,439,198,440,200,441,204,441,208,441,211,439,213,437,214,435,215,433,217,430,219,429,221,431,224,431,226,431,228,428,230,426,231,426,233,425,237,423,239,422,240,420,242,418,244,416,246,413,247,410,248,407,248,405,248,403,249,400,250,398,249,397,248,396,245,396,243,395,241,394,240,393,237,391,236,390,232,389,228,389,225,388,223,387,222,386,219,384,216,383,213,384,210,385,207,387,205,387,203,387,201,386,198,386,195,384,193,384,190,382,188,380,186,379,184,378,182,379,179,379,175,379,173,377,171,375,171,372,171,370,169,369,167,365,167,362,168,359,169,356,171,354,170,352,170,348,170,345,171,342,170,340,169,338,168,337,166,335,165,334,164,333,161,331,160,330,158,328,157,327,155,327,153,325,151,327,149,327,147,328,144,327,142,327,140,326,138,327,136,328,133,330,131,330,129,332,127,334,125,337,124,338,122,341,120,340,118,341,116,343,114,345,113,348,110,350,108,353,109,355,110,358,109,360,108,363,107,366,106,370,106,373,106,375,106,377,106,379,105,380,107,382,106,381,108,382,110,381,112,382,113,385,114,388,115,390,115,391,117,393,118,396,118,398,119,400,118,400,116,403,114,406,115,408,116,410,116,413,117,415,117,417,118,419,118,422,117,424,118,426,118,429,118,430,116,430,114,431,112,432,111,432,108,431,107,428,108,425,108,423,107,421,107,419,108,417,107,415,107,414,105,413,104,414,102,415,99,418,99,422,98,425,97,427,96,430,96,434,97,437,98,439,98,443,97,443,95,441,94,437,91,435,91,433,90,436,88,438,86,436,86,434,87,432,87,430,87,431,89,433,89,430,90,428,91,425,89,427,88,423,87,421,87,419,89,417,93,415,95,416,97,418,97,415,98,413,100,411,98,407,99,406,99,407,102,408,104,406,104,406,107,403,106,402,103,400,101,399,99,399,97,398,95,395,94,392,93,390,92,389,90,386,89,385,90,387,93,388,94,390,96,392,97,395,98,397,99,394,99,394,101,392,104,392,102,391,100,389,99,387,98,384,97,382,95,380,92,378,91,376,92,373,94,369,93,366,94,366,96,364,98,362,98,360,100,359,101,359,103,357,105,356,107,353,107,351,107,349,108,348,107,345,106,343,106,342,103,341,101,342,100,342,98,342,95,344,93,346,93,349,93,351,93,356,93,358,88,356,86,351,84,353,82,357,83,356,80,358,81,363,80,365,78,368,77,369,74,372,73,374,73,376,73,377,71,376,69,376,67,379,66,381,65,381,66,381,68,379,69,380,71,382,71,384,72,387,72,390,72,393,71,395,70,397,71,399,71,403,70,402,66,405,64,407,66,409,64,407,63,409,61,412,61,414,61,416,61,418,60,416,59,413,59,409,60,406,60,403,59,403,57,402,55,405,52,409,50,408,48,404,49,402,50,400,53,396,55,394,57,396,59,398,60,396,62,394,63,393,66,392,68,389,68,388,69,386,69,385,67,384,65,382,62,381,61,377,63,374,64,371,63,371,61,370,56,372,55,377,53,381,51,385,48,390,44,393,43,398,40,403,39,406,40,409,38,413,38,416,38,423,39,420,40,422,41,424,40,428,41,433,42,441,44,442,45,440,47,437,48,428,46,430,48,430,51,432,52,434,51,439,51,440,49,444,47,446,47,448,48,447,45,447,43,453,44,451,45,453,47,456,46,460,44,467,42,469,44,475,43,478,42,480,43,482,42,480,41,487,41,490,42,497,44,496,42,494,41,493,39,497,36,498,34,505,34,504,37,506,39,505,42,507,43,503,47,505,48,508,46,510,44,510,42,508,42,509,39,506,37,510,36,513,38,515,35,519,35,523,37,521,35,521,33,525,32,529,32,534,32,532,31,534,30,537,30,541,29,546,28,552,28,558,27,562,27,564,25,569,25,572,25,569,26,574,26,576,27,582,27,587,28,588,29,586,30,580,31,584,32,586,32,588,33,591,32,598,33,606,34,611,33,614,33,617,34,617,36,619,38,623,38,625,36,628,37,631,37,635,37,640,37,638,35,641,34,659,36,661,37,666,38,674,38,678,38,680,39,682,41,685,41,688,41,692,41,696,41,699,43,702,42,700,41,707,40,711,40,717,41,0,42],[172,25,168,25,171,24,172,25],[140,25,136,25,133,25,137,24,140,24,140,25],[409,24,405,25,401,25,406,23,409,24],[141,23,138,23,135,23,137,22,141,23],[168,24,165,24,163,23,165,22,169,23,168,24],[160,23,157,24,154,23,150,23,152,23,149,22,153,22,158,22,160,23],[570,23,559,24,563,22,566,21,571,23,570,23],[397,21,403,22,398,23,397,24,394,26,392,26,388,25,389,25,386,24,382,22,381,21,386,20,390,21,394,20,397,21],[411,19,415,20,412,21,406,21,400,21,397,20,395,19,401,19,404,19,406,19,411,19],[462,19,460,19,458,19,455,20,453,20,450,19,454,18,457,18,460,18,463,19,462,19],[560,22,556,22,550,22,547,21,545,20,542,19,548,18,552,17,556,19,560,20,560,22],[186,21,188,21,186,22,182,23,178,24,174,23,172,22,174,21,170,21,168,21,169,18,171,18,175,17,178,19,181,19,184,19,186,21],[223,14,228,14,233,14,236,15,231,16,226,17,225,17,229,17,224,18,221,19,218,20,214,21,206,21,209,22,207,24,204,24,200,26,204,26,199,28,194,27,188,27,185,27,181,27,184,26,190,25,187,24,184,23,189,22,187,21,192,20,196,19,192,19,185,19,181,18,180,17,177,17,180,16,182,16,186,15,189,15,191,15,194,15,195,14,198,14,201,14,207,14,214,14,219,14,223,14],[306,13,318,15,315,15,307,15,296,16,304,16,310,16,314,16,316,17,314,18,319,17,328,16,334,17,327,19,320,20,325,20,322,21,321,22,321,25,323,26,320,26,317,27,320,28,319,30,321,31,317,32,319,32,316,33,313,33,315,35,311,35,313,36,316,37,313,39,309,37,307,40,313,40,315,40,310,41,305,43,299,44,296,44,294,45,292,47,287,48,283,49,280,49,279,50,278,53,274,55,274,58,273,60,270,60,267,58,263,58,262,57,260,55,257,53,255,50,253,48,252,46,254,43,257,43,258,40,256,41,253,41,251,41,251,38,253,38,257,39,254,38,252,37,250,37,251,35,248,33,245,31,243,30,237,28,233,28,228,28,223,28,221,27,217,26,222,25,226,25,218,25,213,24,221,22,229,21,224,20,226,19,233,18,236,17,239,16,246,16,252,16,254,16,259,15,264,16,267,16,271,17,266,16,273,14,280,14,283,13,290,13,306,13]];
+const CITIES = [[-100,40],[-77,39],[-122,38],[-87,42],[-74,41],[-0.1,51.5],[2.3,48.8],[13.4,52.5],[37.6,55.7],[30.3,59.9],[60.6,56.8],[82.9,55],[116.4,39.9],[121.5,31.2],[139.7,35.7],[127,37.5],[77.2,28.6],[-46.6,-23.5],[151.2,-33.9],[28,-26.2],[31.2,30],[-58.4,-34.6],[-99.1,19.4],[103.8,1.3]];
+const TARGET = [(14 + 180) * 2, (90 - 50.5) * 2];
+const COLORS = {
+  red: { ink: '#ffb4a8', dim: '#e0796a', glow: 'rgba(255,107,90,.65)', grid: 'rgba(224,121,106,.16)' },
+  blue: { ink: '#a8ecff', dim: '#62b4d0', glow: 'rgba(110,220,255,.6)', grid: 'rgba(98,180,208,.14)' },
+};
+const FRIEND = '#8cc2ff', HOSTILE = '#ff7a68';
+const R = { on: false, now: 0, frozen: false, map: 0, arcA: 1, zoom: 0, hill: 0, units: 0, dim: 0, c: COLORS.red, arcs: [], hillShape: null };
+const reelEl = document.getElementById('reel'), cv = document.getElementById('board'), ctx = cv.getContext('2d');
+const mid = document.getElementById('mid'), low = document.getElementById('low');
+const capL = document.getElementById('capL'), capR = document.getElementById('capR');
+const skipBtn = document.getElementById('skip');
+let W = 0, H = 0, reelToken = 0, FONT = "monospace";
+
+function size() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  R.hillShape = makeHill();
+  FONT = getComputedStyle(document.body).fontFamily;
+}
+addEventListener('resize', () => { if (R.on) size(); });
+
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const ease = u => u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+const smooth = (a, b, v) => { const u = clamp((v - a) / (b - a)); return u * u * (3 - 2 * u); };
+
+function tween(key, to, ms, token) {
+  const from = R[key];
+  if (reduce || ms <= 0) { R[key] = to; return Promise.resolve(); }
+  return new Promise(res => {
+    const t0 = performance.now();
+    const step = now => {
+      if (token !== reelToken) return res();
+      const u = clamp((now - t0) / ms);
+      R[key] = from + (to - from) * ease(u);
+      u < 1 ? requestAnimationFrame(step) : res();
+    };
+    requestAnimationFrame(step);
+  });
+}
+const hold = (ms, token) => (reduce || token !== reelToken) ? Promise.resolve() : sleep(ms);
+
+function makeHill() {
+  const cx = W / 2, cy = H * 0.4, rb = Math.min(W * 0.28, H * 0.25);
+  const K = 9, rings = [];
+  for (let k = 0; k < K; k++) {
+    const f = k / K, pts = [];
+    const ox = cx + rb * 0.22 * f, oy = cy - rb * 0.12 * f;
+    const r0 = rb * (1 - f * 0.9);
+    for (let i = 0; i <= 120; i++) {
+      const a = (i / 120) * Math.PI * 2;
+      const r = r0 * (1 + 0.16 * Math.sin(2 * a + 0.6 + f) + 0.08 * Math.sin(3 * a + 2.1) + 0.05 * Math.sin(5 * a + 0.3 + 2 * f));
+      pts.push([ox + Math.cos(a) * r * 1.25, oy + Math.sin(a) * r * 0.85]);
+    }
+    rings.push(pts);
+  }
+  return { cx, cy, rb, rings, peak: [cx + rb * 0.22 * (K - 1) / K, cy - rb * 0.12 * (K - 1) / K] };
+}
+
+function spawnArc() {
+  let a, b, n = 0;
+  do { a = CITIES[Math.floor(Math.random() * CITIES.length)]; b = CITIES[Math.floor(Math.random() * CITIES.length)]; n++; }
+  while (Math.abs(a[0] - b[0]) < 50 && n < 20);
+  const x0 = (a[0] + 180) * 2, y0 = (90 - a[1]) * 2, x1 = (b[0] + 180) * 2, y1 = (90 - b[1]) * 2;
+  const dist = Math.hypot(x1 - x0, y1 - y0);
+  R.arcs.push({ x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: Math.min(y0, y1) - dist * 0.32, t0: R.now, dur: 2 + Math.random() * 1.4, hit: false });
+  blip();
+}
+
+function frame(now) {
+  if (!R.on) return;
+  requestAnimationFrame(frame);
+  if (!R.frozen) R.now = now / 1000;
+  draw();
+}
+
+function draw() {
+  const c = R.c;
+  ctx.clearRect(0, 0, W, H);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const tall = H > W, fit = Math.min(W / 720, H / 280) * 0.96;
+  const e = R.zoom, s = tall ? Math.max(fit, W / 420) : fit, z = Math.pow(46, e), x0 = tall ? 380 : 360;
+  const cx = x0 + (TARGET[0] - x0) * e, cy = 160 + (TARGET[1] - 160) * e;
+  const P = (x, y) => [W / 2 + (x - cx) * s * z, H / 2 + (y - cy) * s * z];
+  const mapA = 1 - smooth(0.35, 0.85, e);
+
+  if (mapA > 0.01 && R.map > 0) {
+    ctx.save();
+    ctx.globalAlpha = mapA;
+    const sweep = P(R.map * 720, 0)[0];
+    ctx.beginPath(); ctx.rect(0, 0, sweep, H); ctx.clip();
+    ctx.strokeStyle = c.grid; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x <= 720; x += 60) { const [a, b] = [P(x, 20), P(x, 300)]; ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
+    for (let y = 60; y <= 300; y += 60) { const [a, b] = [P(0, y), P(720, y)]; ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
+    ctx.stroke();
+    ctx.strokeStyle = c.ink; ctx.lineWidth = 1.1; ctx.shadowColor = c.glow; ctx.shadowBlur = 8;
+    ctx.beginPath();
+    for (const ring of LAND) {
+      let [x, y] = P(ring[0], ring[1]); ctx.moveTo(x, y);
+      for (let i = 2; i < ring.length; i += 2) {
+        const jump = Math.abs(ring[i] - ring[i - 2]) > 300;
+        [x, y] = P(ring[i], ring[i + 1]);
+        jump ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+    if (R.map < 1) {
+      ctx.save(); ctx.globalAlpha = mapA * 0.8; ctx.strokeStyle = c.ink; ctx.shadowColor = c.glow; ctx.shadowBlur = 16; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(sweep, 0); ctx.lineTo(sweep, H); ctx.stroke(); ctx.restore();
+    }
+    drawArcs(P, mapA);
+  }
+  if (R.hill > 0) drawHill(smooth(0.55, 1, e));
+  if (R.dim > 0) { ctx.fillStyle = `rgba(1,8,16,${R.dim})`; ctx.fillRect(0, 0, W, H); }
+}
+
+function drawArcs(P, mapA) {
+  const c = R.c;
+  ctx.save();
+  ctx.shadowColor = c.glow; ctx.shadowBlur = 10;
+  for (const a of R.arcs) {
+    const p = clamp((R.now - a.t0) / a.dur);
+    if (p <= 0) continue;
+    const at = u => P((1 - u) * (1 - u) * a.x0 + 2 * (1 - u) * u * a.cx + u * u * a.x1, (1 - u) * (1 - u) * a.y0 + 2 * (1 - u) * u * a.cy + u * u * a.y1);
+    const path = (u0, u1, n) => { ctx.beginPath(); for (let i = 0; i <= n; i++) { const [x, y] = at(u0 + (u1 - u0) * i / n); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); };
+    ctx.globalAlpha = mapA * R.arcA * 0.3; ctx.strokeStyle = c.dim; ctx.lineWidth = 1; path(0, p, 24);
+    ctx.globalAlpha = mapA * R.arcA; ctx.strokeStyle = c.ink; ctx.lineWidth = 2; path(Math.max(0, p - 0.22), p, 10);
+    if (p < 1) {
+      const [x, y] = at(p); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 2.4, 0, Math.PI * 2); ctx.fill();
+    } else {
+      if (!a.hit) { a.hit = true; thump(); }
+      const age = R.now - (a.t0 + a.dur);
+      const [x, y] = at(1);
+      ctx.strokeStyle = c.ink; ctx.lineWidth = 1.5;
+      ctx.globalAlpha = mapA * R.arcA * Math.max(0.25, 1 - age / 1.4);
+      ctx.beginPath(); ctx.arc(x, y, age < 1.4 ? 3 + age * 16 : 3, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function symbol(x, y, kind, a) {
+  ctx.save();
+  ctx.globalAlpha = a;
+  const col = kind === 'friend' ? FRIEND : HOSTILE;
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.shadowColor = col; ctx.shadowBlur = 12;
+  ctx.fillStyle = 'rgba(1,8,16,.75)';
+  ctx.beginPath();
+  if (kind === 'friend') { ctx.rect(x - 18, y - 12, 36, 24); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x - 18, y - 12); ctx.lineTo(x + 18, y + 12); ctx.moveTo(x + 18, y - 12); ctx.lineTo(x - 18, y + 12); }
+  else { ctx.moveTo(x, y - 17); ctx.lineTo(x + 17, y); ctx.lineTo(x, y + 17); ctx.lineTo(x - 17, y); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x - 8.5, y - 8.5); ctx.lineTo(x + 8.5, y + 8.5); ctx.moveTo(x + 8.5, y - 8.5); ctx.lineTo(x - 8.5, y + 8.5); }
+  ctx.stroke();
+  ctx.shadowBlur = 0; ctx.fillStyle = col; ctx.font = `12px ${FONT}`; ctx.textAlign = 'center';
+  ctx.fillText(kind === 'friend' ? 'BLUE' : 'RED', x, y + (kind === 'friend' ? 30 : 33));
+  ctx.restore();
+}
+
+function drawHill(fade) {
+  const h = R.hillShape, c = COLORS.blue, K = h.rings.length;
+  ctx.save();
+  ctx.globalAlpha = fade;
+  ctx.shadowColor = c.glow; ctx.shadowBlur = 6;
+  const font = FONT;
+  h.rings.forEach((pts, k) => {
+    const f = clamp(R.hill * K - k);
+    if (f <= 0) return;
+    const index = k % 4 === 0;
+    ctx.strokeStyle = index ? c.ink : c.dim; ctx.lineWidth = index ? 1.8 : 1;
+    const n = Math.max(2, Math.round(pts.length * f));
+    ctx.beginPath(); pts.slice(0, n).forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke();
+    if (index && f === 1) {
+      const [x, y] = pts[Math.round(pts.length * 0.12)];
+      ctx.save(); ctx.shadowBlur = 0; ctx.fillStyle = c.dim; ctx.font = `11px ${font}`; ctx.fillText(String(60 + k * 10), x + 4, y); ctx.restore();
+    }
+  });
+  if (R.hill >= 1) {
+    const [px, py] = h.peak;
+    ctx.fillStyle = c.ink; ctx.font = `11px ${font}`; ctx.fillText('▲ 142', px + 24, py - 16);
+  }
+  const u = R.units;
+  if (u > 0) {
+    const { cx, cy, rb } = h;
+    ctx.globalAlpha = fade * clamp(u * 2);
+    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.moveTo(-10, cy + rb * 1.15); ctx.bezierCurveTo(W * 0.3, cy + rb * 0.85, W * 0.62, cy + rb * 1.25, W + 10, cy + rb * 0.75);
+    ctx.strokeStyle = c.dim; ctx.lineWidth = 6; ctx.stroke(); ctx.strokeStyle = '#010810'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = c.dim; ctx.lineWidth = 1;
+    const wx = cx - rb * 1.15, wy = cy + rb * 0.25;
+    for (const [dx, dy] of [[0,0],[14,-8],[-12,-10],[8,12],[-6,14],[22,6],[-20,4],[2,-20],[18,-22]]) { ctx.beginPath(); ctx.arc(wx + dx, wy + dy, 5, 0, Math.PI * 2); ctx.stroke(); }
+    symbol(cx - rb * 0.5, cy + rb * 1.35, 'friend', fade * clamp(u * 2));
+    symbol(h.peak[0], h.peak[1] + 2, 'hostile', fade * clamp(u * 2 - 1));
+  }
+  ctx.restore();
+}
+
+function setColors(red) {
+  document.body.classList.toggle('alarm', red);
+  R.c = red ? COLORS.red : COLORS.blue;
+}
+
+function stopReel() {
+  reelToken++;
+  R.on = false;
+  if (droneStop) droneStop();
+  reelEl.hidden = true; skipBtn.hidden = true;
+  setColors(false);
+  mid.replaceChildren(); low.replaceChildren(); capL.textContent = ''; capR.textContent = '';
+}
+
+function finalFrame() {
+  Object.assign(R, { frozen: false, map: 1, arcA: 0, zoom: 1, hill: 1, units: 1, dim: 0.35 });
+  setColors(false);
+  capL.textContent = 'Sector 7 · 1:25 000'; capR.textContent = 'Hill 142';
+}
+
+async function reel() {
+  const token = ++reelToken;
+  const ok = () => token === reelToken;
+  Object.assign(R, { on: true, frozen: false, map: 0, arcA: 1, zoom: 0, hill: 0, units: 0, dim: 0, arcs: [] });
+  screen.replaceChildren(); mid.replaceChildren(); low.replaceChildren();
+  reelEl.hidden = false; skipBtn.hidden = false;
+  size();
+  setColors(true);
+  document.body.classList.add('flicker');
+  setTimeout(() => document.body.classList.remove('flicker'), 900);
+  requestAnimationFrame(frame);
+
+  klaxon(3);
+  capL.textContent = 'Alert'; capR.textContent = '';
+  await show('Launch detected.', { cls: 'loud', cps: 14, pause: 0, into: mid });
+  await hold(2200, token); if (!ok()) return;
+  mid.replaceChildren();
+
+  capL.innerHTML = 'Strategic display';
+  await tween('map', 1, 2600, token); if (!ok()) return;
+
+  drone(11);
+  for (let i = 10; i >= 1; i--) {
+    capR.innerHTML = `T-00:<b>${String(i).padStart(2, '0')}</b>`;
+    beep(i <= 3 ? 1320 : 990, 0.07, 0.14);
+    const n = Math.round((11 - i) * 0.9);
+    for (let k = 0; k < n; k++) setTimeout(() => { if (ok() && !R.frozen) spawnArc(); }, (reduce ? 0 : 1000 / n) * k);
+    await hold(1000, token); if (!ok()) return;
+  }
+  capR.innerHTML = 'T-00:<b>00</b>';
+  R.frozen = true;
+  R.arcs.forEach(a => { a.hit = true; });
+  if (droneStop) droneStop();
+  await hold(1300, token); if (!ok()) return;
+  boom();
+  await show('No side wins this one.', { cls: 'loud', cps: 13, pause: 1500, into: mid });
+  if (!ok()) return;
+  await show("Let's try a smaller war.", { cps: 14, pause: 900, into: mid });
+  if (!ok()) return;
+  mid.replaceChildren();
+  await tween('arcA', 0, 900, token); if (!ok()) return;
+
+  setColors(false);
+  capL.textContent = 'Closing'; capR.textContent = '';
+  whoosh(2.6);
+  tween('hill', 1, 3400, token);
+  await tween('zoom', 1, 2800, token); if (!ok()) return;
+  capL.textContent = 'Sector 7 · 1:25 000'; capR.textContent = 'Hill 142';
+  await hold(900, token); if (!ok()) return;
+  ping(990);
+  await tween('units', 0.5, 700, token); if (!ok()) return;
+  ping(660);
+  await tween('units', 1, 700, token); if (!ok()) return;
+  await show('Red holds the hill.', { cps: 15, pause: 400, into: low });
+  await show('Blue must take it before dark.', { cps: 15, pause: 1600, into: low });
+  if (!ok()) return;
+  low.replaceChildren();
+
+  swell();
+  await tween('dim', 0.72, 1200, token); if (!ok()) return;
+  await show('A better game.', { cls: 'loud', cps: 12, pause: 900, into: mid });
+  if (!ok()) return;
+  mid.replaceChildren();
+  const t = document.createElement('p'); t.className = 'title'; t.textContent = 'Kriegsspiel'; mid.append(t);
+  say.textContent = 'Kriegsspiel';
+  await hold(2500, token); if (!ok()) return;
+  await show('A real war game. Built for you.', { cls: 'dim', cps: 16, pause: 1400, into: mid });
+  if (!ok()) return;
+  const roleLine = role === 'commander' ? 'You command Blue forces.' : 'You are the umpire. You see both sides.';
+  await show(roleLine, { cps: 14, pause: 2000, into: mid });
+  if (!ok()) return;
+  mid.replaceChildren();
+  await tween('dim', 0.35, 900, token); if (!ok()) return;
+  orders(token);
+}
+
+async function orders(token) {
+  skipBtn.hidden = true;
+  low.replaceChildren();
+  await show('What are your orders?', { cps: 13, pause: 0, into: low });
+  if (token !== reelToken) return;
+  const form = document.createElement('form');
+  form.innerHTML = '<label class="sr" for="order-text">Your orders</label><textarea id="order-text" rows="3" maxlength="400" placeholder="Type your orders"></textarea><div class="actions"><button type="submit">Transmit</button></div>';
+  low.append(form);
+  const box = form.querySelector('textarea');
+  box.focus({ preventScroll: true });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!box.value.trim()) { box.focus(); return; }
+    form.remove();
+    beep(1320, 0.05, 0.1); setTimeout(() => beep(1760, 0.05, 0.1), 90);
+    await show('Orders recorded.', { cps: 16, pause: 500, into: low });
+    await show('Deliver them to your father in person.', { cls: 'dim', cps: 18, pause: 500, into: low });
+    const last = await show('Stand by.', { cps: 14, pause: 0, into: low });
+    last.classList.add('caret');
+    if (token !== reelToken) return;
+    actions([['Play again', () => { stopReel(); intro(); }], ['List games', () => { stopReel(); menu(); }, true]], low);
+  });
+}
+
+skipBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  const token = ++reelToken;
+  if (droneStop) droneStop();
+  mid.replaceChildren();
+  finalFrame();
+  orders(token);
+});
+
+intro();
+</script>
+</body>
+</html>
