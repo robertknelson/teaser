@@ -108,10 +108,7 @@ body.alarm{--ink:#ffb4a8;--dim:#e0796a;--glow:rgb(255 107 90 / .55);--glass:#3a0
 
 <script>
 const NAME = "Commander";
-const ROLE = "commander";
-const [hashName, hashRole] = decodeURIComponent(location.hash.slice(1)).split(',').map(s => s.trim());
-const who = (hashName || NAME).toUpperCase();
-const role = (hashRole || ROLE).toLowerCase();
+const who = (decodeURIComponent(location.hash.slice(1)).trim() || NAME).toUpperCase();
 
 const screen = document.getElementById('screen');
 const say = document.getElementById('say');
@@ -121,12 +118,16 @@ let hurry = false, typingNow = false, onKey = null, scene = 0;
 
 /* ---------- Sound: made on the spot, no files ---------- */
 let ac = null, out = null, noiseBuf = null, muted = false;
+/* Phones open sound only on a finished tap (finger lifted), never on touch-down. On an iPhone, asking to be
+   treated as media playback lets the sound play when the ringer switch is on silent. */
 function audio() {
   try {
     if (!ac) {
       const C = window.AudioContext || window.webkitAudioContext;
       if (!C) return null;
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
       ac = new C();
+      ac.onstatechange = syncSound;
       const comp = ac.createDynamicsCompressor();
       out = ac.createGain(); out.gain.value = muted ? 0 : 0.9;
       out.connect(comp); comp.connect(ac.destination);
@@ -134,8 +135,15 @@ function audio() {
       const d = noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     }
-    if (ac.state === 'suspended') ac.resume();
+    if (ac.state !== 'running') {
+      const p = ac.resume();
+      if (p) p.then(syncSound, () => {});
+      const s = ac.createBufferSource();
+      s.buffer = ac.createBuffer(1, 1, 22050);
+      s.connect(ac.destination); s.start(0);
+    }
   } catch { return null; }
+  syncSound();
   return ac;
 }
 const live = () => ac && ac.state === 'running' && !muted;
@@ -240,15 +248,22 @@ function swell() {
 }
 
 const soundBtn = document.getElementById('sound');
+function syncSound() {
+  const on = ac && ac.state === 'running';
+  soundBtn.textContent = muted ? 'Sound off' : on ? 'Sound on' : 'Tap for sound';
+  soundBtn.setAttribute('aria-pressed', String(!muted && !!on));
+}
 soundBtn.addEventListener('click', e => {
   e.stopPropagation();
-  muted = !muted;
-  soundBtn.textContent = muted ? 'Sound off' : 'Sound on';
-  soundBtn.setAttribute('aria-pressed', String(!muted));
+  if (ac && ac.state === 'running') muted = !muted; else muted = false;
   if (out) out.gain.value = muted ? 0 : 0.9;
+  audio();
+  if (!muted) beep(990, 0.06, 0.12);
 });
+syncSound();
 
-document.addEventListener('pointerdown', () => { audio(); if (typingNow && !R.on) hurry = true; });
+for (const ev of ['pointerup', 'touchend', 'click']) document.addEventListener(ev, () => audio(), { passive: true });
+document.addEventListener('pointerdown', () => { if (typingNow && !R.on) hurry = true; });
 document.addEventListener('keydown', e => {
   audio();
   if (e.target.tagName === 'TEXTAREA') return;
@@ -822,8 +837,7 @@ async function reel() {
   await hold(2500, token); if (!ok()) return;
   await show('A real war game. Built for you.', { cls: 'dim', cps: 16, pause: 1400, into: mid });
   if (!ok()) return;
-  const roleLine = role === 'commander' ? 'You command Blue forces.' : 'You are the umpire. You see both sides.';
-  await show(roleLine, { cps: 14, pause: 2000, into: mid });
+  await show('You command Blue forces.', { cps: 14, pause: 2000, into: mid });
   if (!ok()) return;
   mid.replaceChildren();
   await tween('dim', 0.35, 900, token); if (!ok()) return;
